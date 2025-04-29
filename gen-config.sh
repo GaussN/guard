@@ -25,9 +25,11 @@ cat <<EOF > server.conf
 PrivateKey = ${server_key}
 Address = ${SERVER_ADDR}/32
 ListenPort = 51820
+PostUp = sysctl -w net.ipv4.ip_forward=1
 PostUp = nft create table ip wireguard
 PostUp = nft "add chain ip wireguard postrouting { type nat hook postrouting priority srcnat; policy accept; }"
 PostUp = nft add rule ip wireguard postrouting iifname %i oifname "${SERVER_GATEWAY}" masquerade
+PostDown = sysctl -w net.ipv4.ip_forward=0
 PostDown = nft delete table ip wireguard
 EOF
 
