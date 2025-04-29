@@ -22,7 +22,7 @@ Address = ${SERVER_ADDR}/32
 ListenPort = 51820
 PostUp = nft create table ip wireguard
 PostUp = nft "add chain ip wireguard postrouting { type nat hook postrouting priority srcnat; policy accept; }"
-PostUp = nft add rule ip wireguard postrouting oifname "${SERVER_GATEWAY} masquerading"
+PostUp = nft add rule ip wireguard postrouting iifname %i oifname "${SERVER_GATEWAY}" masquerade
 PostDown = nft delete table ip wireguard
 EOF
 
