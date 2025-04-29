@@ -1,9 +1,14 @@
 #!/bin/bash
     
 # CONFIG:
-SERVER_ENDPOINT="1.1.1.1" # $(curl ifconfig.me)
+SERVER_ENDPOINT=`curl -s ifconfig.me`
 SERVER_ADDR="172.16.0.1"
-SERVER_GATEWAY="eth0"
+SERVER_GATEWAY=""
+
+[[ -z "$SERVER_GATEWAY" ]] && {
+    echo "specify server gateway"
+    exit 1
+}
 
 declare -A NETWORKS=(
     ["172.16.0.<>"]="$(seq 2 10)"
