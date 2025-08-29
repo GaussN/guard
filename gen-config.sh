@@ -14,6 +14,8 @@ if [[ "$@" =~ \s?--help\s? ]]; then
     exit 0
 fi
 
+set -e  # to allow functions exit script
+
 DEFAULT_HOST=$(curl -s https://ifconfig.me)
 DEFAULT_PORT=51820
 DEFAULT_NETWORK="10.0.0.0/8"
@@ -53,6 +55,7 @@ split_param() {
     if [[ "$param" =~ (.+)=(.+) ]]; then 
         echo "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
     else 
+        echo "Issue while parse params with =" >&2
         exit 2
     fi
 }
@@ -82,10 +85,6 @@ parse_args() {
     while [[ -n "$1" ]]; do
         if [[ "$1" =~ "=" ]]; then 
             flag_value=$(split_param "$1")
-            if [[ "$?" -eq 2 ]]; then 
-                echo "Issue while parse params with =" >&2
-                exit 2
-            fi
             flag="${flag_value[0]}"
             value="${flag_value[1]}"
             shift
@@ -105,31 +104,31 @@ validate_params() {
     # if address doesn't belong to any adapter 
     if [[ ! $(ip -brief addr | grep "${params[host]}/") ]]; then
         echo "Invalid host address" >&2
-        exit 4
+        exit 3
     fi
     #######################################################################
     # validate vpn port
     if [[ ! ("${params[port]}" =~ [1-9][0-9]?+ ) ]]; then 
         echo "Port ain't a number" >&2
-        exit 5
+        exit 4
     fi
     # check only udp
     if [[ $(ss -lun | grep ":${params[port]}\s") ]]; then 
-        echo "Port in use. Try another one" >&2
-        exit 6
+        echo "Port is in use. Try another one" >&2
+        exit 5
     fi
     #######################################################################
     # validate network and peers
     if [[ ! ("${params[network]}" =~ ([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)/([0-9]{1,2}) ) ]]; then 
-        echo "Invalid network mask" >&2
-        exit 7
+        echo "Invalid network" >&2
+        exit 6
     else 
         # check if peers number is fits in the given subnet
         local subnet_mask="${BASH_REMATCH[5]}"
         # client peers + host peer 
         if [[ $(( 2 ** (32 - subnet_mask) - 2 )) -lt $(( params[peers] + 1 )) ]]; then 
-            echo "Peers number doesn't fits in given subnet" >&2
-            exit 8
+            echo "Peers number doesn't fits in the given network" >&2
+            exit 7
         fi
         # check if subnet contains bits outside the mask
         local o_3="${BASH_REMATCH[1]}"
@@ -138,19 +137,19 @@ validate_params() {
         local o_0="${BASH_REMATCH[4]}"
         if [[ $o_3 -le 0 || $o_3 -ge 255 ]]; then 
             echo "Invalid network octet 1" >&2 
-            exit 9
+            exit 8
         fi 
         if [[ $o_2 -lt 0 || $o_2 -ge 255 ]]; then 
             echo "Invalid network octet 2" >&2 
-            exit 9
+            exit 8
         fi 
         if [[ $o_1 -lt 0 || $o_1 -ge 255 ]]; then 
             echo "Invalid network octet 3" >&2 
-            exit 9
+            exit 8
         fi 
         if [[ $o_0 -lt 0 || $o_0 -ge 255 ]]; then 
             echo "Invalid network octet 4" >&2 
-            exit 9
+            exit 8
         fi 
         local subnet_network=$(( o_0 + (o_1 << (8*1)) + (o_2 << (8*2)) + (o_3 << (8*3)) ))
         local mi=$(( 32 - ${subnet_mask} ))  # mask iterator
@@ -206,8 +205,11 @@ gen_peers() {
 create_server_config() {
     local address="$1"
     local config="${SERVER_CONFIG_DIR}/${SERVER_CONFIG_FILE}"
-    if [[ -f "${config}" ]]; then
+    if [[ -e "${config}" ]]; then
         mv "${config}" "${config}.$(date -u '+%s')" 
+    fi
+    if [[ -e "${CLIENTS_CONFIG_DIR}" ]]; then
+        mv "${CLIENTS_CONFIG_DIR}" "${CLIENTS_CONFIG_DIR}.$(date -u '+%s')"
     fi
 
     local server_prv=$(wg genkey)
