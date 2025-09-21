@@ -21,7 +21,7 @@ All params are optional
 - `4` - port ain't a number
 - `5` - port is in user
 - `6` - network doesn't match pattern
-- `7` - peers number to large to the given network
+- `7` - peers number is too large to the given network
 - `8` - some networks octet ain't in range 0..255(first one 1..255)
-- `9` - host bist are set in the network field(invalid network mask)
+- `9` - host bits are set in the network field(invalid network mask)
 
