@@ -4,6 +4,7 @@
 - `--port[=]<port>` - port which vpn will be use to listen connections
 - `--network[=]<subnet_network>` - vpn network
 - `--peers[=]<peers_number>` - number of client peers
+- `--interface[=]<interface_name>` - interfwireguard onterface name
 
 All params are optional 
 ## Default values
@@ -11,6 +12,7 @@ All params are optional
 - port=`51820` - deafult wireguard port
 - network=`10.0.0.0/8`
 - peers=`1`
+- interface=`vpn`
 
 ## Exit statuses
 

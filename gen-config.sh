@@ -7,6 +7,7 @@ INFO+="\t--host[=]<ip_addr> - servers endpoint\n"
 INFO+="\t--port[=]<port> - port which vpn will be use to listen connections\n"
 INFO+="\t--network[=]<subnet_network> - vpn network\n"
 INFO+="\t--peers[=]<peers_number> - number of client peers\n"
+INFO+="\t--interface[=]<interface_name> - wireguard interface name\n"
 INFO+="\n"
 
 if [[ "$@" =~ \s?--help\s? ]]; then
@@ -21,9 +22,9 @@ DEFAULT_PORT=51820
 DEFAULT_NETWORK="10.0.0.0/8"
 DEFAULT_PEERS=1
 DEFAULT_DNS="8.8.8.8, 8.8.4.4"
+DEFAULT_INTERFACE="vpn"
 
 SERVER_CONFIG_DIR="/etc/wireguard"
-SERVER_CONFIG_FILE="server.conf"
 SERVER_PRV_FILE="key"
 SERVER_PUB_FILE="key.pub"
 CLIENTS_CONFIG_DIR="${SERVER_CONFIG_DIR}/clients"
@@ -37,6 +38,7 @@ params["port"]="${DEFAULT_PORT}"
 params["network"]="${DEFAULT_NETWORK}"
 params["peers"]="${DEFAULT_PEERS}"
 params["dns"]="${DEFAULT_DNS}"
+params["interface"]="${DEFAULT_INTERFACE}"
 
 
 debug() {
@@ -69,7 +71,8 @@ set_param() {
         host | \
         port | \
         network | \
-        peers)
+        peers | \
+        interface)
             params[$flag]="${value}"
         ;;
         *)
@@ -204,7 +207,7 @@ gen_peers() {
 # VPN
 create_server_config() {
     local address="$1"
-    local config="${SERVER_CONFIG_DIR}/${SERVER_CONFIG_FILE}"
+    local config="${SERVER_CONFIG_DIR}/${params[interface]}.conf"
     if [[ -e "${config}" ]]; then
         mv "${config}" "${config}.$(date -u '+%s')" 
     fi
@@ -258,7 +261,7 @@ Endpoint = ${params[host]}:${params[port]}
 PersistentKeepalive = 25
 EOF
 
-    cat <<EOF >> "${SERVER_CONFIG_DIR}/${SERVER_CONFIG_FILE}"
+    cat <<EOF >> "${SERVER_CONFIG_DIR}/${params[interface]}.conf"
 [Peer]
 AllowedIPs = ${address/\/[0-9]*/\/32}
 PublicKey = ${client_pub}
