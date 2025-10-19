@@ -206,6 +206,7 @@ gen_peers() {
 
 # VPN
 create_server_config() {
+    mkdir -p "${SERVER_CONFIG_DIR}"
     local address="$1"
     local config="${SERVER_CONFIG_DIR}/${params[interface]}.conf"
     if [[ -e "${config}" ]]; then
