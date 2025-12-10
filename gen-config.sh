@@ -149,7 +149,7 @@ CDIR="${WDIR}/guard"
 if [[ -d "${CDIR}" ]]; then
     mv "${CDIR}" "${CDIR}.$(date '+%s')-back"
 fi
-mkdir -p "${CDIR}"
+mkdir -p "${CDIR}/clients"
 
 cd "${CDIR}"
 
@@ -190,7 +190,6 @@ ip link add "${params[interface]}"  type wireguard
 ip link set "${params[interface]}" up
 wg setconf "${params[interface]}" "${WDIR}/${params[interface]}.conf" 
 
-
 for ((i=0; i < params[peers]; i++)); do
     debug "generate peer ${i}"
     address_num=$(( address_num + 1 ))
@@ -198,7 +197,7 @@ for ((i=0; i < params[peers]; i++)); do
     key=$(wg genkey)
     addr=$(ip::to_str_view address_num)
 
-    cat <<EOF > ""
+    cat <<EOF > "${CDIR}/clients/${addr}.conf"
 [Interface]
 PrivateKey = ${key}
 Address = ${addr}
