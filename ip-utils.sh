@@ -1,12 +1,14 @@
 #!/bin/bash
 
+HEADER="ip-utils"
+
 ip::parse() {
     # args: "255.255.255.255[/32]"
     if [[ -z "$1" ]]; then
         return 1
     fi
     if [[ ! "$1" =~ ([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)(/[0-9]+)? ]]; then 
-        echo "$1 is not an ip address.">&2
+        echo "${HEADER}: $1 is not an ip address.">&2
         return 2
     fi
     o1="${BASH_REMATCH[1]}"
@@ -18,12 +20,21 @@ ip::parse() {
     return 0
 }
 
+ip::to_str_view() {
+    # args: num
+    o1=$((((255 << 24) & $1) >> 24))
+    o2=$((((255 << 16) & $1) >> 16))
+    o3=$((((255 << 8) & $1) >> 8))
+    o4=$((255 & $1))
+    echo "${o1}.${o2}.${o3}.${o4}"
+    return 0
+}
 
 ip::validate_network() {
     # desc: check if address is a correct network address 
     # args: o1 o2 o3 o4 mask  # <o1.o2.o3.o4/mask>
     if [[ $# -ne 5 ]]; then 
-        echo "Invalid number of arguments.">&2
+        echo "${HEADER}: Invalid number of arguments.">&2
         return 1
     fi
     o1=$1
@@ -32,16 +43,16 @@ ip::validate_network() {
     o4=$4
     mask=$5
     if [[ $o1 -eq 0 ]]; then
-        echo "First octet can not be equal 0.">&2
+        echo "${HEADER}: First octet can not be equal 0.">&2
         return 1
     fi
     if [[ $mask -lt 1 || $mask -gt 30 ]]; then
-        echo "Mask is invlaid.">&2
+        echo "${HEADER}: Mask is invlaid.">&2
         return 2
     fi
     for octet in $o1 $o2 $o3 $o4; do
         if [[ ! ($octet -ge 0 && $octet -lt 255) ]]; then
-            echo "$octet - invalid octet.">&2
+            echo "${HEADER}: $octet - invalid octet.">&2
             return 1
         fi
     done
@@ -53,7 +64,7 @@ ip::validate_network() {
     # printf "%32s\n" $(echo "obase=2;$number_view" | bc)
     # printf "%32s\n" $(echo "obase=2;$address_mask" | bc)
     if [[ $(( number_view & address_mask )) -ne 0 ]]; then
-        echo "Address doesn't fit to given mask.">&2
+        echo "${HEADER}: Address doesn't fit to given mask.">&2
         return 2
     fi
     return 0
@@ -68,7 +79,7 @@ ip::validate_peers_number() {
     mask=$1
     peers=$2
     if [[ $((2**(32-mask) - 3)) -lt $peers ]]; then
-        echo "Peers don't fit to given mask.">&2
+        echo "${HEADER}: Peers don't fit to given mask.">&2
         return 1
     fi
     return 0
