@@ -1,0 +1,6 @@
+> turned out that pure wg tool doesn't supports some directives like 
+PostUp, PostDown, Address 
+- [ ] Hardcode Post* scriprs
+	- [ ] cat net.ipv4.ip_forwarding=1 > /etc/sysctl.conf ...
+	- [ ] nft_rule >> /etc/nftables.rule ...
+- [ ] Add server ip using `ip link ...`

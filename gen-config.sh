@@ -43,7 +43,7 @@ fi
 
 exec 3>/dev/null
 debug() {
-    echo -e "$*" >&3
+    echo -e $* >&3
 }
 if [[ -v DEBUG ]]; then 
     exec 3>&1 
@@ -61,9 +61,12 @@ fi
 utils=("ss" "ip" "wg" "nft")
 declare -a missing
 for util in "${utils[@]}"; do 
-    if [[ $(command -v $util >&3) -ne 0 ]]; then
+    debug -n "Ckecking $util "
+    if ! command -v $util &>/dev/null; then
         missing=($missing "$util")
+		debug -n " - missing"
     fi
+	debug
 done
 if [[ "${#missing}" -ne 0 ]]; then 
     echo -e "The script need some utilities to work: ${missing}">&2
@@ -76,7 +79,7 @@ if [[ ! ( -f "$utils_file" ) ]]; then
     exit 1
 fi
 
-cksm="3310ebadfdf33e796bfd766566b1f591  ip-utils.sh"
+cksm="279857a5a71952b2ff5f126d184d0d4d  ip-utils.sh"
 if ! $(md5sum -c <(echo "$cksm") 1>/dev/null 2>&3); then 
     echo "MD5 sum for $utils_file isn't valid.">&2
     exit 1
@@ -87,6 +90,7 @@ while [[ -n $1 ]]; do
         flag="${1#--}"
         shift 
         params[$flag]="$1"
+		debug "$flag overrided to \"$1\""
     else 
         case "$1" in
         --run) ;;
@@ -100,15 +104,22 @@ while [[ -n $1 ]]; do
 done
 #
 if [[ -z "${params[host]}" ]]; then
+	debug "Try to derive host address"
     params["host"]=`curl -s https://ifconfig.me 2>&3`
     if [[ $? -ne 0 ]]; then
         echo "Host doesn't specified and can not be derived.">&2
         exit 1
     fi
 fi
-# VALIDATE 
+# VALIDATE
+if [[ -v DEBUG ]]; then 
+    debug "PARAMS: "
+    for key in "${!params[@]}"; do
+        debug "[${key}]=${params[$key]}"
+    done
+fi
 # HOST 
-ip -brief addr | awk '{ print $3 }' | grep "${param[host]}" 1>/dev/null 2>&3
+ip -brief addr | awk '{ print $3 }' | grep "${params[host]}" 1>/dev/null 2>&3
 if [[ $? -ne 0 && !( -v DISABLE_IP_CHECK ) ]]; then
     echo "${param[host]} doesn't belong to any adapter.">&2
     exit 2
@@ -121,16 +132,17 @@ if [[ $? -eq 0 ]]; then
     exit 2 
 fi
 
-set +e 
+set -e 
 # NETWORK 
 source "$utils_file" 
-mapfile -d' ' network_tuple < <(ip::parse "${param[network]}" 2>&2)  # explicity )
-ip::validate_network "${network_tuple[@]}"
+mapfile -d' ' -t network_tuple < <(ip::parse "${params[network]}" 2>&2)  # convert output "o1 o2 o3 o4 m" to array
+ip::validate_network ${network_tuple[@]}
 
 # PEERS 
+# BUG: 
 ip::validate_peers_number "${network_tuple[5]}" "${params[peers]}"
 
-set -e
+set +e
 # INTERFACE 
 ip -brief link | awk '{ print $1}' | grep "${params[interface]}" 1>/dev/null 2>&3
 if [[ $? -eq 0 ]]; then 
@@ -139,80 +151,96 @@ if [[ $? -eq 0 ]]; then
 fi
 
 if [[ -v VALIDATE_ONLY ]]; then 
+    echo "Validation has finished"
     exit 0
 fi
+echo "Start configuration"
 # SETING UP
+set -e
 
-WDIR="/etc/wireguard"
-CDIR="${WDIR}/guard"
+function _try() {
+	WDIR="/etc/wireguard"
+	CDIR="${WDIR}/guard"
+	if [[ -d "${CDIR}" ]]; then
+	    mv "${CDIR}" "${CDIR}.$(date '+%s')-back"
+	fi
+	mkdir -p "${CDIR}/clients"
+	cd "${CDIR}"
 
-if [[ -d "${CDIR}" ]]; then
-    mv "${CDIR}" "${CDIR}.$(date '+%s')-back"
-fi
-mkdir -p "${CDIR}/clients"
+	wg genkey | tee key | wg pubkey > key.pub 
+	debug "Server keys have generated"
 
-cd "${CDIR}"
+	# network_tuple [1].[2].[3].[4]/[5]
+	address_num=$(( (network_tuple[0]<<24)+(network_tuple[1]<<16)+(network_tuple[2]<<8)+(network_tuple[3]) ))
+	address_num=$(( address_num + 1 ))
+	debug "Server address in numeric view: ${address_num}"
 
-wg genkey | tee key | wg pubkey > key.pub 
-
-# network_tuple [1].[2].[3].[4]/[5]
-address_num=$(( (network_tuple[1]<<24)+(network_tuple[2]<<16)+(network_tuple[3]<<8)+(network_tuple[4]) ))
-address_num=$(( address_num + 1 ))
-
-# TODO : modprobe masquerading 
-cat <<EOF > nft_postup.rules
+	# TODO : modprobe masquerading 
+	cat <<EOF > nft_postup.rules
 table ip wireguard {
-    chain postrouting {
-        type nat hook postrouting priority srcnat; policy accept;
-        iifname $int oifname != $int masquerade 
-    }
+	chain postrouting {
+	type nat hook postrouting priority srcnat; policy accept;
+	iifname $int oifname != $int masquerade 
+	}
 }
 EOF
+	debug "nft post up script has generated"
 
-cat <<EOF > nft_postdown.rules
+	cat <<EOF > nft_postdown.rules
 destroy table ip wireguard
 EOF
+	debug "nft post down script has generated"
 
-cat <<EOF > config
+	cat <<EOF > "${CDIR}/config"
 [Interface]
-PrivateKey = $(cat key)
-Address = $(ip::to_str_view address_num)
+PrivateKey = $(cat "${CDIR}/key")
+Address = $(ip::to_str_view address_num)/32
 ListenPort = ${params[port]}
 PostUp = sysctl -w net.ipv4.if_forward=1
 PostUp = nft -f "${CDIR}/nft_postup.rules" -D int="%i"
 PostDown = sysctl -w net.ipv4.if_forward=0
 PostDown = nft -f "${CDIR}/nft_postdown.rules"
 EOF
+	debug "Server wg config has generated"
 
-ln -s "${WDIR}/${params[interface]}.conf" "${CDIR}/config"
+	ln -sf "${CDIR}/config" "${WDIR}/${params[interface]}.conf" 
+	debug "Link "${WDIR}/${params[interface]}.conf" to server config has generated"
 
-ip link add "${params[interface]}"  type wireguard
-ip link set "${params[interface]}" up
-wg setconf "${params[interface]}" "${WDIR}/${params[interface]}.conf" 
+	ip link add "${params[interface]}" type wireguard
+	ip addr add dev "${params[interface]}" "$(ip::to_str_view address_num)"
+	ip link set "${params[interface]}" up
 
-for ((i=0; i < params[peers]; i++)); do
-    debug "generate peer ${i}"
-    address_num=$(( address_num + 1 ))
+	for ((i=0; i < params[peers]; i++)); do
+	    debug "generate peer ${i}"
+	    address_num=$(( address_num + 1 ))
 
-    key=$(wg genkey)
-    addr=$(ip::to_str_view address_num)
+	    key=$(wg genkey)
+	    addr=$(ip::to_str_view address_num)
 
-    cat <<EOF > "${CDIR}/clients/${addr}.conf"
+	    cat <<EOF > "${CDIR}/clients/${addr}.conf"
 [Interface]
 PrivateKey = ${key}
-Address = ${addr}
+Address = ${addr}/32
 DNS = ${params[dns]}
 [Peer]
+PublicKey = $(cat "${CDIR}/key.pub")
 Endpoint = ${params[host]}:${params[port]}
 AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
 EOF
 
-    wg set peer "$(echo $key | wg pubkey)" allower-ips "${addr}/32"
+	    wg set peer "$(echo $key | wg pubkey)" allower-ips "${addr}/32"
+	done
 
-done
+	wg addconf "${params[interface]}" "${WDIR}/${params[interface]}.conf" 
+	wg syncconf "${params[interface]}" "${CDIR}/config"
+}
 
-wg syncconf "${params[interface]}" "${CDIR}/config"
+if ! _try; then
+	:  # catch block 
+	ip link del "${params[interface]}"
+fi
+
 
 
 # SERVER:
